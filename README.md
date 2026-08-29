@@ -21,6 +21,7 @@ biggest platforms and saves you the manual checking.
 - Pulls scopes and rewards for the top candidates so the ranking is based on
   real data, not just directory listings
 - Exports the ranked list to CSV
+- Same features available in a browser at http://127.0.0.1:5000
 - Caches everything on disk. Running the tool again is instant and sends zero
   requests to the platforms
 
@@ -28,8 +29,10 @@ biggest platforms and saves you the manual checking.
 
 ```
 bounty-scout/
-├── main.py        # menu and prompts
-├── tools.py       # thin handlers used by the menu
+├── main.py        # CLI menu and prompts
+├── app.py         # web interface (Flask), same logic as the CLI
+├── templates/     # the web page
+├── tools.py       # thin handlers used by the CLI and the web app
 ├── fetch.py       # requests, caching, one fetcher per platform endpoint
 ├── rules.py       # normalizing, scoring, ranking, bug class filter
 ├── requirements.txt
@@ -151,6 +154,19 @@ Refreshing HackerOne takes about 2.5 minutes (64 pages of teams).
   Top N (default 20):
   wrote 20 rows to top_programs.csv
 ```
+
+## Web interface
+
+The same tool is available in a browser. Start it with:
+
+```
+python app.py
+```
+
+Then open http://127.0.0.1:5000. The page has the same five modes: rank,
+filter by bug class, one program in detail, refresh data, and a CSV download.
+Everything runs on your machine; nothing is sent anywhere except the platform
+requests themselves.
 
 ## How the score works
 

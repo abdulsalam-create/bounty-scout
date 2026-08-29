@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bounty Scout</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --card: #ffffff;
+    --border: #e2e0da;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --accent: #2f6f4f;
+    --accent-dark: #265a40;
+    --error: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  header { margin-bottom: 1.5rem; }
+  h1 { font-size: 1.6rem; margin: 0; }
+  header p { color: var(--muted); margin: 0.25rem 0 0; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+  }
+  .modes { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .modes label {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.35rem 0.9rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .modes input { display: none; }
+  .modes input:checked + span {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 999px;
+    padding: 0.35rem 0.9rem;
+    margin: -0.35rem -0.9rem;
+  }
+  .grid { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+  .field { margin-bottom: 0.85rem; }
+  .field label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+  .field input[type="number"], .field input[type="text"], .field select {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: #fff;
+  }
+  .checks { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .checks label { font-size: 0.95rem; }
+  .hidden { display: none; }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.55rem 1.4rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid var(--border);
+    padding: 0.4rem 0.6rem;
+  }
+  td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .muted { color: var(--muted); }
+  .note { font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0; }
+  .error {
+    background: #fdecea;
+    border: 1px solid #f5c6c2;
+    color: var(--error);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    margin-bottom: 1.25rem;
+  }
+  ul.why { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+  .scopes { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85rem; word-break: break-all; }
+  .refresh-line { margin: 0.25rem 0; }
+  footer { color: var(--muted); font-size: 0.8rem; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Bounty Scout</h1>
+    <p>Rank bug bounty programs by dupe risk and expected value. Data from HackerOne, Bugcrowd and Intigriti public endpoints, cached locally.</p>
+  </header>
+
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <div class="card">
+    <form method="post" action="/run">
+      <div class="modes">
+        <label><input type="radio" name="mode" value="rank" {% if mode in (None, "rank") %}checked{% endif %} onchange="modeChanged()"><span>Rank</span></label>
+        <label><input type="radio" name="mode" value="filter" {% if mode == "filter" %}checked{% endif %} onchange="modeChanged()"><span>Filter by bug class</span></label>
+        <label><input type="radio" name="mode" value="details" {% if mode == "details" %}checked{% endif %} onchange="modeChanged()"><span>One program</span></label>
+        <label><input type="radio" name="mode" value="refresh" {% if mode == "refresh" %}checked{% endif %} onchange="modeChanged()"><span>Refresh data</span></label>
+        <label><input type="radio" name="mode" value="export" {% if mode == "export" %}checked{% endif %} onchange="modeChanged()"><span>Export CSV</span></label>
+      </div>
+
+      <div class="grid">
+        <div class="field" style="flex:2">
+          <label>Platforms</label>
+          <div class="checks">
+            <label><input type="checkbox" name="hackerone" checked> HackerOne</label>
+            <label><input type="checkbox" name="bugcrowd" checked> Bugcrowd</label>
+            <label><input type="checkbox" name="intigriti" checked> Intigriti</label>
+          </div>
+        </div>
+
+        <div class="field group-rank group-filter group-export" style="flex:1">
+          <label>Top N</label>
+          <input type="number" name="limit" value="10" min="1" max="100">
+        </div>
+
+        <div class="field group-rank" style="flex:1">
+          <label>Minimum avg payout $</label>
+          <input type="number" name="min_payout" value="0" min="0">
+        </div>
+
+        <div class="field group-filter" style="flex:1">
+          <label>Bug class</label>
+          <select name="bug_class">
+            {% for c in bug_classes %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+          </select>
+        </div>
+
+        <div class="field group-details hidden" style="flex:1">
+          <label>Platform</label>
+          <select name="detail_platform">
+            <option>hackerone</option>
+            <option>bugcrowd</option>
+            <option>intigriti</option>
+          </select>
+        </div>
+
+        <div class="field group-details hidden" style="flex:2">
+          <label>Handle (program slug, e.g. agoda-public)</label>
+          <input type="text" name="handle" placeholder="agoda-public">
+        </div>
+      </div>
+
+      <button type="submit">Run</button>
+    </form>
+    <p class="note">First rank can take up to a minute while details are fetched. Refreshing HackerOne takes about 2.5 minutes.</p>
+  </div>
+
+  {% if rows %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Score</th><th>Program</th><th>Platform</th><th>Payout</th><th>Hunters</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        {% for i, score, name, platform, payout, hunters, why in rows %}
+        <tr>
+          <td class="num">{{ i }}</td>
+          <td class="num"><strong>{{ score }}</strong></td>
+          <td>{{ name }}</td>
+          <td>{{ platform }}</td>
+          <td class="num">{{ payout }}</td>
+          <td class="num">{{ hunters }}</td>
+          <td class="muted">{{ why }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="note">{{ note }}. Lower hunter count means less dupe risk; a ~ prefix means the count is estimated.</p>
+  </div>
+  {% endif %}
+
+  {% if detail %}
+  <div class="card">
+    <h2 style="margin:0 0 0.25rem">{{ detail.name }} <span class="muted">({{ detail.platform }}/{{ detail.handle }})</span></h2>
+    <p style="margin:0.25rem 0">
+      score <strong>{{ detail.score }}</strong> |
+      avg payout ${{ detail.avg_payout or '?' }} |
+      hunters {{ '~' if detail.participants_proxy else '' }}{{ detail.participants }}
+    </p>
+    <p class="muted" style="margin-bottom:0.25rem">Why this score:</p>
+    <ul class="why">
+      {% for line in detail.breakdown %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+    {% if detail.scope_count %}
+    <p class="muted" style="margin-bottom:0.25rem">Scope ({{ detail.scope_count }}):</p>
+    <ul class="why scopes">
+      {% for s in detail.scopes %}<li>{{ s }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if refresh %}
+  <div class="card">
+    <h2 style="margin:0 0 0.5rem">Refresh done</h2>
+    {% for platform, counts in refresh.items() %}
+    <p class="refresh-line"><strong>{{ platform }}</strong>:
+      {% for key, value in counts.items() %}{{ key }} {{ value }}{% if not loop.last %}, {% endif %}{% endfor %}
+    </p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <footer>
+    <form method="post" action="/export" style="display:inline">
+      <input type="hidden" name="limit" value="20">
+      <input type="hidden" name="hackerone" value="on">
+      <input type="hidden" name="bugcrowd" value="on">
+      <input type="hidden" name="intigriti" value="on">
+      <button type="submit" style="background:#4b5563">Download top 20 as CSV</button>
+    </form>
+    <p style="margin-top:0.75rem">Runs entirely on your machine. No accounts, no API keys. Cache lives in <code>cache/</code>.</p>
+  </footer>
+</div>
+
+<script>
+  const GROUPS = ["group-rank", "group-filter", "group-details", "group-export"];
+  const SHOW = {
+    rank: ["group-rank"],
+    filter: ["group-rank", "group-filter"],
+    details: ["group-details"],
+    refresh: [],
+    export: ["group-rank", "group-export"],
+  };
+  function modeChanged() {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const visible = SHOW[mode] || [];
+    for (const el of document.querySelectorAll(GROUPS.join(","))) {
+      const group = GROUPS.find(g => el.classList.contains(g));
+      el.classList.toggle("hidden", !visible.includes(group));
+    }
+  }
+  modeChanged();
+</script>
+</body>
+</html>
