@@ -19,6 +19,21 @@ PLATFORMS = ["hackerone", "bugcrowd", "intigriti"]
 BUG_CLASSES = sorted(rules.BUG_CLASS_KEYWORDS)
 
 
+def _state():
+    """Form values to echo back into the page, defaults for a plain GET."""
+    is_post = request.method == "POST"
+    form = request.form
+    return {
+        "mode": form.get("mode") or "rank",
+        "limit": form.get("limit") or "10",
+        "min_payout": form.get("min_payout") or "0",
+        "bug_class": form.get("bug_class") or "idor",
+        "detail_platform": form.get("detail_platform") or "hackerone",
+        "handle": form.get("handle") or "",
+        "platforms": {p: (form.get(p) == "on") if is_post else True for p in PLATFORMS},
+    }
+
+
 def _platforms_from_form():
     """Selected platforms from the form, None means all."""
     picked = [p for p in PLATFORMS if request.form.get(p)]
@@ -40,64 +55,13 @@ def _rank_table(result):
         proxy = "~" if p["participants_proxy"] else ""
         payout = f"${p['avg_payout']:.0f}" if p["avg_payout"] else "?"
         rows.append((i, p["score"], p["name"], p["platform"], payout,
-                     f"{proxy}{p['participants']}", p["breakdown"][0]))
+                     f"{proxy}{p['participants']}", p["breakdown"][0],
+                     " | ".join(p["breakdown"])))
     return rows
 
 
-@app.route("/", methods=["GET"])
-def index():
-    """The single page."""
-    return render_template("index.html", bug_classes=BUG_CLASSES)
-
-
-@app.route("/run", methods=["POST"])
-def run():
-    """Run the chosen mode and render the result."""
-    mode = request.form.get("mode", "rank")
-    platforms = _platforms_from_form()
-    limit = _int_from_form("limit", 10)
-    min_payout = _int_from_form("min_payout", 0)
-
-    result = None
-    if mode == "rank":
-        result = json.loads(tools.rank(platforms, limit, min_payout))
-    elif mode == "filter":
-        bug_class = request.form.get("bug_class", "idor")
-        result = json.loads(tools.filter_by_bug_class(bug_class, platforms, limit))
-    elif mode == "details":
-        platform = request.form.get("detail_platform", "hackerone")
-        handle = request.form.get("handle", "").strip()
-        result = json.loads(tools.program_details(platform, handle))
-    elif mode == "refresh":
-        result = json.loads(tools.refresh(platforms, force=True))
-
-    if result is None:
-        result = {"status": "error", "error": f"unknown mode {mode}"}
-    if result.get("status") != "success":
-        return render_template("index.html", bug_classes=BUG_CLASSES,
-                               error=result.get("error"))
-
-    if mode in ("rank", "filter"):
-        rows = _rank_table(result)
-        note = f"{result['count']} programs, {result['fetched_details']} details fetched fresh"
-        return render_template("index.html", bug_classes=BUG_CLASSES,
-                               mode=mode, rows=rows, note=note)
-    if mode == "details":
-        return render_template("index.html", bug_classes=BUG_CLASSES,
-                               detail=result)
-    return render_template("index.html", bug_classes=BUG_CLASSES,
-                           refresh=result["data"])
-
-
-@app.route("/export", methods=["POST"])
-def export():
-    """Download the ranked list as CSV."""
-    platforms = _platforms_from_form()
-    limit = _int_from_form("limit", 20)
-    result = json.loads(tools.rank(platforms, limit, 0))
-    if result.get("status") != "success":
-        return result.get("error"), 400
-
+def _csv_response(result):
+    """Stream a ranked list as a CSV download."""
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(["rank", "score", "platform", "handle", "name",
@@ -108,6 +72,70 @@ def export():
     buffer.seek(0)
     return Response(buffer.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": "attachment; filename=top_programs.csv"})
+
+
+@app.route("/", methods=["GET"])
+def index():
+    """The single page."""
+    return render_template("index.html", state=_state())
+
+
+@app.route("/run", methods=["POST"])
+def run():
+    """Run the chosen mode and render the result."""
+    state = _state()
+    mode = state["mode"]
+    platforms = _platforms_from_form()
+    limit = _int_from_form("limit", 10)
+    min_payout = _int_from_form("min_payout", 0)
+
+    if mode == "rank":
+        result = json.loads(tools.rank(platforms, limit, min_payout))
+        if result.get("status") == "success":
+            return render_template("index.html", state=state, rows=_rank_table(result),
+                                   note=f"{result['count']} programs, "
+                                        f"{result['fetched_details']} details fetched fresh")
+        return render_template("index.html", state=state, error=result.get("error"))
+
+    if mode == "filter":
+        result = json.loads(tools.filter_by_bug_class(state["bug_class"], platforms, limit))
+        if result.get("status") == "success":
+            return render_template("index.html", state=state, rows=_rank_table(result),
+                                   note=f"{result['count']} programs match "
+                                        f"'{state['bug_class']}' scope keywords")
+        return render_template("index.html", state=state, error=result.get("error"))
+
+    if mode == "details":
+        result = json.loads(tools.program_details(state["detail_platform"], state["handle"]))
+        if result.get("status") == "success":
+            return render_template("index.html", state=state, detail=result)
+        return render_template("index.html", state=state, error=result.get("error"))
+
+    if mode == "refresh":
+        result = json.loads(tools.refresh(platforms, force=True))
+        if result.get("status") == "success":
+            return render_template("index.html", state=state, refresh=result["data"])
+        return render_template("index.html", state=state, error=result.get("error"))
+
+    if mode == "export":
+        result = json.loads(tools.rank(platforms, limit, 0))
+        if result.get("status") == "success":
+            return _csv_response(result)
+        return render_template("index.html", state=state, error=result.get("error"))
+
+    return render_template("index.html", state=state,
+                           error=f"unknown mode {mode}")
+
+
+@app.route("/export", methods=["POST"])
+def export():
+    """Download the ranked list as CSV."""
+    platforms = _platforms_from_form()
+    limit = _int_from_form("limit", 20)
+    result = json.loads(tools.rank(platforms, limit, 0))
+    if result.get("status") != "success":
+        return result.get("error"), 400
+    return _csv_response(result)
 
 
 if __name__ == "__main__":
