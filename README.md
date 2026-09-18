@@ -1,4 +1,4 @@
-> **⚠️ Archived — superseded by [bounty-watch](https://github.com/abdulsalam-create/bounty-watch).**
+> **⚠️ Archived: superseded by [bounty-watch](https://github.com/abdulsalam-create/bounty-watch).**
 > bounty-watch keeps the program ranking (now an additive, freshness-weighted [hunt score](https://abdulsalam-create.github.io/bounty-watch/)) and adds YesWeHack, daily monitoring, scope/deploy/new-feature change alerts by email, and a live dashboard.
 
 # Bounty Scout
